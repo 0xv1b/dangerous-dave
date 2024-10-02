@@ -84,6 +84,92 @@ int main(int argc, char* argv[])
     tile_count |= out_data[3] << 24;
 
     /*Offset index*/
+    uint32_t tile_index[500];
+    for(i = 0; i < tile_count; i++)
+    {
+        tile_index[i] |= out_data[4*i + 4];
+        tile_index[i] |= out_data[4*i + 5] << 8;
+        tile_index[i] |= out_data[4*i + 6] << 16;
+        tile_index[i] |= out_data[4*i + 7] << 24;
+    }
+
+    /* Last tile is at EOF*/
+    tile_index[i] = final_length;
+
+    /*Create a separate file for each tile.*/
+    uint16_t tile_width;
+    uint16_t tile_height;
+    uint32_t current_byte;
+    uint32_t current_tile_byte;
+    uint8_t current_tile;
+
+    for(current_tile = 0; current_tile < tile_count; current_tile++)
+    {
+        current_tile_byte = 0;
+        current_byte = tile_index[current_tile];
+
+        /*Take 16 x 16*/
+        tile_width = 16;
+        tile_height = 16;
+
+        /* Skip byte boundary */
+        if(current_byte > 65280)
+        {
+            current_byte++;
+        }
+
+        /* Read first dword for custom dimension information */
+        if (out_data[current_byte+1] == 0 && out_data[current_byte+3] == 0)
+        {
+            if (out_data[current_byte] > 0 && out_data[current_byte] < 0xBF && out_data[current_byte+2] > 0 && out_data[current_byte+2]< 0x64)
+            {
+                tile_width = out_data[current_byte];
+                tile_height = out_data[current_byte+2];
+                current_byte += 4;
+            }
+        }
+         
+        SDL_Surface *surface;
+        uint8_t *dst_byte;
+        surface = SDL_CreateRGBSurface(0, tile_width, tile_height,32,0,0,0,0);
+
+        dst_byte = (uint8_t*)surface->pixels;
+
+        /*Go through data, match to palette, draw to surface*/
+        uint8_t src_byte;
+        uint8_t red_p, green_p, blue_p;
+
+        for(; current_byte < tile_index[current_tile+1]; current_byte++)
+        {
+            src_byte = out_data[current_byte];
+            red_p = palette[src_byte*3];
+            blue_p = palette[src_byte*3 + 1];
+            green_p = palette[src_byte*3 + 2];
+
+            dst_byte[current_tile_byte*4] = blue_p;
+            dst_byte[current_tile_byte*4+1] = green_p;
+            dst_byte[current_tile_byte*4+2] = red_p;
+            dst_byte[current_tile_byte*4+3] = 0xFF;
+
+            current_tile_byte++;
+        }
+
+        /* Create new file for each tile */
+        char file_num[4];
+        char fout[12];
+        fout[0] = '\0';
+        strcat(fout, "tile");
+        sprintf(&file_num[0], "%u", current_tile);
+        strcat(fout, file_num);
+        strcat(fout, ".bmp");
+
+        printf("Saying %s as bitmap (%d x %d)\n", fout, tile_width, tile_height);
+
+        /* Save and free */
+        SDL_SaveBMP(surface, fout);
+        SDL_FreeSurface(surface);
+
+    }
 
     return 0;
 }
